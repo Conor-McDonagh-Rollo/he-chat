@@ -1,0 +1,128 @@
+html,
+body {
+    height: 100%;
+    overflow: hidden;
+}
+
+* {
+    cursor: url("https://ani.cursors-4u.net/cursors/cur-13/cur1156.png"), auto;
+}
+
+body {
+    background: #000 url("https://i.imgur.com/yOAoplf.gif") repeat;
+    color: #ffb6f9;
+    font-family: "Comic Sans MS", "Courier New", monospace;
+    margin: 0;
+    cursor: url("https://ani.cursors-4u.net/cursors/cur-13/cur1156.png"), auto;
+}
+
+header {
+    background: linear-gradient(90deg, #ff00cc, #3333ff);
+    color: #fff;
+    text-align: center;
+    padding: 12px;
+    font-size: 22px;
+    font-weight: bold;
+    text-shadow: 0 0 8px #fff;
+    border-bottom: 2px dashed #fff;
+    cursor: url("https://ani.cursors-4u.net/cursors/cur-13/cur1156.png"), auto;
+}
+
+.wrap {
+    display: flex;
+    flex-direction: row;
+    padding: 16px;
+    gap: 12px;
+    height: calc(100% - 100px);
+    overflow: hidden;
+}
+
+.panel {
+    background: rgba(30, 0, 60, 0.7);
+    border: 2px dotted #ff66cc;
+    border-radius: 12px;
+    box-shadow: 0 0 10px #ff33ff;
+    padding: 12px;
+}
+
+#left {
+    width: 250px;
+}
+
+#chat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    cursor: url("https://ani.cursors-4u.net/cursors/cur-13/cur1156.png"), auto;
+}
+
+select,
+input,
+button {
+    background: #111;
+    color: #ffb6f9;
+    border: 1px solid #ff33cc;
+    border-radius: 8px;
+    padding: 6px;
+    font-family: "Comic Sans MS", monospace;
+    cursor: url("https://ani.cursors-4u.net/cursors/cur-13/cur1157.png"), auto;
+}
+
+button:hover {
+    background: #ff33cc;
+    color: #fff;
+    cursor: url("https://ani.cursors-4u.net/cursors/cur-13/cur1157.png"), auto;
+}
+
+#messages {
+    flex: 1;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px dashed #ff99ff;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 14px;
+    scrollbar-color: #ff99ff #000;
+    cursor: url("https://ani.cursors-4u.net/cursors/cur-13/cur1156.png"), auto;
+}
+
+.msg {
+    margin: 6px 0;
+}
+
+.alias {
+    color: #99ccff;
+    font-weight: bold;
+}
+
+.time {
+    color: #aaa;
+    font-size: 11px;
+    margin-left: 6px;
+}
+
+#sendRow {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+#text {
+    flex: 1;
+}
+
+marquee {
+    color: #fff;
+    background: linear-gradient(90deg, #ff33cc, #6633ff);
+    padding: 4px;
+    font-size: 12px;
+}
+
+a {
+    color: #66ffff;
+    text-decoration: underline;
+}
+
+a:hover {
+    color: #fff;
+}

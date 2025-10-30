@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>★☆ HE-Chat ☆★</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <header>★☆ Welcome to HE-Chat ☆★</header>
+    <marquee behavior="alternate">Welcome back 2 da net!! ☆彡</marquee>
+    <div class="wrap">
+        <div id="left" class="panel">
+            <p><button id="loginBtn" style="width:100%">Login with AWS</button></p>
+            <button id="logoutBtn">Logout</button>
+            <p><b>Alias:</b><br><input id="alias" maxlength="40" placeholder="ur cute name"></p>
+            <p><b>Room:</b><br><select id="room"></select></p>
+            <button id="join">Join Room</button>
+            <hr>
+            <p style="font-size:12px;color:#ffccff">make an alias, join a room, then vibe! 💖<br><br>Commands:<br>/me [action]<br>/shrug<br>/roll [x]d[y]<br>/clear</p>
+        </div>
+        <div id="chat" class="panel">
+            <button id="loadOlder" style="width:100%;margin-bottom:6px;">Load older messages</button>
+            <div id="messages"></div>
+            <div id="typing" style="font-size:12px;color:#aaa;margin-top:4px;height:16px;"></div>
+            <div id="sendRow">
+                <input id="text" placeholder="type ur msg ^_^" maxlength="1000" />
+                <input type="file" id="fileInput" accept="image/*" style="color:#ffb6f9;">
+                <button id="send">Send!</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
