@@ -2,7 +2,7 @@ const CFG = window.HECHAT_CONFIG || {};
 const ROOMS = Array.isArray(CFG.rooms) ? CFG.rooms : [];
 
 // --- Cognito ---
-const AWS_REGION = CFG.region;
+const AWS_REGION = CFG.region || "us-east-1";
 const COGNITO_USER_POOL_ID = CFG.userPoolId;
 const COGNITO_CLIENT_ID = CFG.clientId;
 
@@ -221,23 +221,45 @@ const textInput = document.getElementById("text");
 
 aliasInput.value = localStorage.getItem("alias") || "";
 
-const token = getIdToken();
-const socket = io({ auth: { token } });
+let socket = null;
 let currentRoom = null;
-
 let authAlerted = false;
-socket.on("connect_error", (err) => {
-  if (!authAlerted) {
-    alert("Auth failed. Please log in.");
-    authAlerted = true;
-  }
-  loginBtn.disabled = false;
-  loginBtn.textContent = "Login with AWS";
-});
 
-socket.on("auth_ok", ({ username }) => {
-  document.getElementById("alias").value = username;
-});
+function initSocket() {
+  if (socket) return;
+  const token = getIdToken();
+  if (!token) return; // not logged in yet
+  socket = io({ auth: { token } });
+
+  socket.on("connect_error", () => {
+    if (!authAlerted) {
+      alert("Auth failed. Please log in.");
+      authAlerted = true;
+    }
+    loginBtn.disabled = false;
+    loginBtn.textContent = "Login with AWS";
+  });
+
+  socket.on("auth_ok", ({ username }) => {
+    document.getElementById("alias").value = username;
+  });
+
+  socket.on("joined", ({ room }) => {
+    currentRoom = room;
+    messagesDiv.innerHTML = "";
+    lastLoaded = 0;
+    loadHistory(room);
+  });
+
+  socket.on("typing", ({ alias }) => {
+    typingDiv.textContent = `${alias} is typing...`;
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => (typingDiv.textContent = ""), 1500);
+  });
+
+  socket.on("message", addMsg);
+  socket.on("error_msg", (m) => alert(m));
+}
 
 function colorForAlias(alias) {
     let hash = 0;
@@ -300,26 +322,15 @@ loadOlderBtn.onclick = () => {
   if (currentRoom) loadHistory(currentRoom, 50, lastLoaded);
 };
 
-socket.on("joined", ({ room }) => {
-  currentRoom = room;
-  messagesDiv.innerHTML = "";
-  lastLoaded = 0;
-  loadHistory(room);
-});
-
 
 const typingDiv = document.getElementById("typing");
 let typingTimeout;
 
 textInput.addEventListener("input", () => {
   if (!currentRoom) return;
+  if (!socket) initSocket();
+  if (!socket) return; // not logged in yet
   socket.emit("typing", { room: currentRoom, alias: aliasInput.value });
-});
-
-socket.on("typing", ({ alias }) => {
-  typingDiv.textContent = `${alias} is typing...`;
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => (typingDiv.textContent = ""), 1500);
 });
 
 joinBtn.onclick = () => {
@@ -327,6 +338,8 @@ joinBtn.onclick = () => {
     const room = roomSel.value;
     if (!alias) return alert("Pick an Alias!");
     localStorage.setItem("alias", alias);
+    if (!socket) initSocket();
+    if (!socket) return alert("Please log in first");
     socket.emit("join", { room, alias });
 };
 
@@ -337,12 +350,16 @@ sendBtn.onclick = () => {
   if (t.startsWith("/")) {
     handleCommand(t);
   } else {
+    if (!socket) initSocket();
+    if (!socket) return alert("Please log in first");
     socket.emit("message", { text: t });
   }
   textInput.value = "";
 };
 
 function handleCommand(cmd) {
+  if (!socket) initSocket();
+  if (!socket) return alert("Please log in first");
   const [command, ...args] = cmd.slice(1).split(" ");
 
   switch (command.toLowerCase()) {
@@ -386,7 +403,8 @@ fileInput.addEventListener("change", async (e) => {
   const res = await fetch("/upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
   if (!res.ok) { alert("Upload failed"); return; }
   const { url } = await res.json();
-
+  if (!socket) initSocket();
+  if (!socket) return alert("Please log in first");
   socket.emit("message", { text: url });
   fileInput.value = ""; // reset
 });
@@ -416,6 +434,8 @@ messagesDiv.addEventListener("drop", async (e) => {
   if (!res.ok) { alert("Upload failed"); return; }
   const { url } = await res.json();
   
+  if (!socket) initSocket();
+  if (!socket) return alert("Please log in first");
   socket.emit("message", {
     text: url
   });
@@ -426,6 +446,7 @@ textInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendBtn.click();
 });
 
-socket.on("message", addMsg);
-
-socket.on("error_msg", (m) => alert(m));
+// If already logged in (tokens exist), initialize socket now
+if (savedId) {
+  initSocket();
+}

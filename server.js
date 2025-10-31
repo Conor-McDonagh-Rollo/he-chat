@@ -100,7 +100,7 @@ app.post("/upload", authMiddleware, upload.single("image"), (req, res) => {
 
 
 // --- Static + dynamic homepage ---
-app.get("/", (_req, res) => {
+app.get(["/", "/index.html"], (_req, res) => {
   const html = fs.readFileSync(path.join(__dirname, "public/index.html"), "utf8");
   const cfg = {
     rooms: ROOMS,
