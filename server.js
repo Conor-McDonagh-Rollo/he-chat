@@ -79,6 +79,8 @@ const upload = multer({
   storage: multerS3({
     s3,
     bucket: process.env.S3_BUCKET,
+    acl: "public-read",
+    contentType: multerS3.AUTO_CONTENT_TYPE,
     key: (req, file, cb) => {
       const safeName = file.originalname.replace(/[^\w.\-]+/g, "_");
       const key = `uploads/${Date.now()}_${safeName}`;
@@ -93,8 +95,8 @@ app.post("/upload", authMiddleware, upload.single("image"), (req, res) => {
   res.json({ url: req.file.location });
 });
 
-// serve uploaded images
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// Note: uploads are stored in S3 and returned with public URLs
+//       I should probably make this more secure... but for later
 
 
 // --- Static + dynamic homepage ---

@@ -1,64 +1,208 @@
-const ROOMS = window.ROOMS;
 const CFG = window.HECHAT_CONFIG || {};
+const ROOMS = Array.isArray(CFG.rooms) ? CFG.rooms : [];
 
 // --- Cognito ---
 const AWS_REGION = CFG.region;
 const COGNITO_USER_POOL_ID = CFG.userPoolId;
 const COGNITO_CLIENT_ID = CFG.clientId;
-const COGNITO_DOMAIN = CFG.domain || `https://${COGNITO_USER_POOL_ID}.auth.${AWS_REGION}.amazoncognito.com`; // replace if you use a custom domain
-const REDIRECT_URI = window.location.origin;
 
-// --- Token handling ---
-function getTokenFromUrl() {
-  const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
-  const params = new URLSearchParams(hash);
-  return params.get("id_token") || params.get("access_token");
+function saveTokens(result) {
+  if (!result) return;
+  const { IdToken, AccessToken, RefreshToken } = result;
+  if (IdToken) localStorage.setItem("cognito_id_token", IdToken);
+  if (AccessToken) localStorage.setItem("cognito_access_token", AccessToken);
+  if (RefreshToken) localStorage.setItem("cognito_refresh_token", RefreshToken);
+  // Just for backward compatibility (trust in stack overflow)
+  if (IdToken) localStorage.setItem("cognito_token", IdToken);
 }
 
-function saveToken(t) { localStorage.setItem("cognito_token", t); }
-function getSavedToken() { return localStorage.getItem("cognito_token"); }
-function clearToken() { localStorage.removeItem("cognito_token"); }
-
-function redirectToLogin() {
-  const REDIRECT_URI = window.location.origin;
-  const url =
-    `${COGNITO_DOMAIN}/login?client_id=${encodeURIComponent(COGNITO_CLIENT_ID)}` +
-    `&response_type=token&scope=openid+email+profile&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
-  window.location.href = url;
+function getIdToken() {
+  return (
+    localStorage.getItem("cognito_id_token") ||
+    localStorage.getItem("cognito_token") ||
+    null
+  );
+}
+function getAccessToken() { return localStorage.getItem("cognito_access_token"); }
+function clearTokens() {
+  localStorage.removeItem("cognito_id_token");
+  localStorage.removeItem("cognito_access_token");
+  localStorage.removeItem("cognito_refresh_token");
+  localStorage.removeItem("cognito_token");
 }
 
-loginBtn.onclick = redirectToLogin;
-logoutBtn.onclick = () => { clearToken(); window.location.reload(); };
-
-(function bootstrapAuth() {
-  const token = getTokenFromUrl();
-  if (token) {
-    saveToken(token);
-    history.replaceState({}, document.title, window.location.pathname); // clean URL
+const COG_ENDPOINT = `https://cognito-idp.${AWS_REGION}.amazonaws.com/`;
+async function cognitoRequest(target, body) {
+  const res = await fetch(COG_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-amz-json-1.1",
+      "X-Amz-Target": target
+    },
+    body: JSON.stringify(body)
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (!res.ok || data.__type || data.errorType) {
+    const msg = data.message || data.__type || data.errorType || `HTTP ${res.status}`;
+    throw new Error(msg);
   }
-  const saved = getSavedToken();
-  if (saved) {
+  return data;
+}
+
+// --- Direct login handler ---
+async function loginDirect(username, password) {
+  try {
+    const data = await cognitoRequest(
+      "AWSCognitoIdentityProviderService.InitiateAuth",
+      {
+        AuthFlow: "USER_PASSWORD_AUTH",
+        ClientId: COGNITO_CLIENT_ID,
+        AuthParameters: { USERNAME: username, PASSWORD: password }
+      }
+    );
+    const result = data.AuthenticationResult;
+    if (!result?.IdToken) throw new Error("No token returned");
+    saveTokens(result);
+    alert("Login successful!");
+    loginForm.style.display = "none";
     loginBtn.textContent = "Logged In ✓";
     loginBtn.disabled = true;
-  }
-})();
-
-function handleLogin() {
-  const token = getTokenFromUrl();
-  if (token) {
-    saveToken(token);
-    // Clear URL hash so it looks clean
-    history.replaceState({}, document.title, window.location.pathname);
-  }
-  const saved = getSavedToken();
-  if (saved) {
-    socket.emit("auth", { token: saved });
-    document.getElementById("loginBtn").textContent = "Logged In ✓";
-    document.getElementById("loginBtn").disabled = true;
+    location.reload();
+  } catch (err) {
+    alert("Login failed: " + err.message);
   }
 }
 
-document.getElementById("loginBtn").onclick = redirectToLogin;
+async function logout() {
+  try {
+    const at = getAccessToken();
+    if (at) {
+      await cognitoRequest(
+        "AWSCognitoIdentityProviderService.GlobalSignOut",
+        { AccessToken: at }
+      );
+    }
+  } catch (_) {
+    // ignore errors, still clear client state
+  } finally {
+    clearTokens();
+    alert("Logged out");
+    location.reload();
+  }
+}
+
+// --- Basic inline login UI ---
+const loginBtn = document.getElementById("loginBtn");
+const loginForm = document.createElement("div");
+loginForm.innerHTML = `
+  <input id="userField" placeholder="Username" style="width:100%;margin-bottom:4px;">
+  <input id="passField" type="password" placeholder="Password" style="width:100%;margin-bottom:4px;">
+  <button id="doLogin" style="width:100%">Submit</button>
+`;
+loginForm.style.display = "none";
+document.getElementById("left").insertBefore(loginForm, loginBtn.nextSibling);
+
+loginBtn.onclick = () => {
+  loginForm.style.display = loginForm.style.display === "none" ? "block" : "none";
+};
+document.getElementById("doLogin").onclick = () => {
+  const u = document.getElementById("userField").value.trim();
+  const p = document.getElementById("passField").value.trim();
+  if (!u || !p) return alert("Enter username & password");
+  loginDirect(u, p);
+};
+
+// Auto-mark logged-in state
+const savedId = getIdToken();
+if (savedId) {
+  loginBtn.textContent = "Logged In ✓";
+  loginBtn.disabled = true;
+}
+
+// --- Register UI ---
+const leftPanel = document.getElementById("left");
+const registerBtn = document.createElement("button");
+registerBtn.id = "registerBtn";
+registerBtn.textContent = "Register";
+leftPanel.insertBefore(registerBtn, loginForm.nextSibling);
+
+const registerForm = document.createElement("div");
+registerForm.style.display = "none";
+registerForm.innerHTML = `
+  <input id="regUser" placeholder="Username" style="width:100%;margin-top:6px;margin-bottom:4px;">
+  <input id="regEmail" type="email" placeholder="Email" style="width:100%;margin-bottom:4px;">
+  <input id="regPass" type="password" placeholder="Password" style="width:100%;margin-bottom:4px;">
+  <button id="doRegister" style="width:100%">Sign Up</button>
+  <div id="confirmBlock" style="display:none;margin-top:6px;">
+    <input id="confUser" placeholder="Username" style="width:100%;margin-bottom:4px;">
+    <input id="confCode" placeholder="Confirmation Code" style="width:100%;margin-bottom:4px;">
+    <button id="doConfirm" style="width:100%">Confirm</button>
+    <button id="resendCode" style="width:100%;margin-top:4px;">Resend Code</button>
+  </div>
+`;
+leftPanel.insertBefore(registerForm, registerBtn.nextSibling);
+
+registerBtn.onclick = () => {
+  registerForm.style.display = registerForm.style.display === "none" ? "block" : "none";
+};
+
+document.getElementById("doRegister").onclick = async () => {
+  const u = document.getElementById("regUser").value.trim();
+  const e = document.getElementById("regEmail").value.trim();
+  const p = document.getElementById("regPass").value.trim();
+  if (!u || !e || !p) return alert("Enter username, email, password");
+  try {
+    await cognitoRequest("AWSCognitoIdentityProviderService.SignUp", {
+      ClientId: COGNITO_CLIENT_ID,
+      Username: u,
+      Password: p,
+      UserAttributes: [ { Name: "email", Value: e } ]
+    });
+    alert("Sign-up started. Check email for code.");
+    // show confirm block prefilled
+    document.getElementById("confUser").value = u;
+    document.getElementById("confirmBlock").style.display = "block";
+  } catch (err) {
+    alert("Register failed: " + err.message);
+  }
+};
+
+document.getElementById("doConfirm").onclick = async () => {
+  const u = document.getElementById("confUser").value.trim();
+  const c = document.getElementById("confCode").value.trim();
+  if (!u || !c) return alert("Enter username and code");
+  try {
+    await cognitoRequest("AWSCognitoIdentityProviderService.ConfirmSignUp", {
+      ClientId: COGNITO_CLIENT_ID,
+      Username: u,
+      ConfirmationCode: c
+    });
+    alert("Confirmed! You can now login.");
+    document.getElementById("confirmBlock").style.display = "none";
+    registerForm.style.display = "none";
+  } catch (err) {
+    alert("Confirm failed: " + err.message);
+  }
+};
+
+document.getElementById("resendCode").onclick = async () => {
+  const u = document.getElementById("confUser").value.trim();
+  if (!u) return alert("Enter username first");
+  try {
+    await cognitoRequest("AWSCognitoIdentityProviderService.ResendConfirmationCode", {
+      ClientId: COGNITO_CLIENT_ID,
+      Username: u
+    });
+    alert("Code resent");
+  } catch (err) {
+    alert("Resend failed: " + err.message);
+  }
+};
+
+// Logout wiring
+const logoutBtn = document.getElementById("logoutBtn");
+logoutBtn.onclick = logout;
 
 const roomSel = document.getElementById("room");
 
@@ -77,12 +221,16 @@ const textInput = document.getElementById("text");
 
 aliasInput.value = localStorage.getItem("alias") || "";
 
-const token = getSavedToken();
+const token = getIdToken();
 const socket = io({ auth: { token } });
 let currentRoom = null;
 
+let authAlerted = false;
 socket.on("connect_error", (err) => {
-  alert("Auth failed. Please log in.");
+  if (!authAlerted) {
+    alert("Auth failed. Please log in.");
+    authAlerted = true;
+  }
   loginBtn.disabled = false;
   loginBtn.textContent = "Login with AWS";
 });
@@ -139,7 +287,10 @@ const loadOlderBtn = document.getElementById("loadOlder");
 let lastLoaded = 0;
 
 async function loadHistory(room, limit = 50, offset = 0) {
-  const res = await fetch(`/history/${encodeURIComponent(room)}?limit=${limit}&offset=${offset}`);
+  const idt = getIdToken();
+  const res = await fetch(`/history/${encodeURIComponent(room)}?limit=${limit}&offset=${offset}`, {
+    headers: idt ? { Authorization: `Bearer ${idt}` } : {}
+  });
   const rows = await res.json();
   rows.forEach(addMsg);
   if (rows.length) lastLoaded += rows.length;
@@ -225,7 +376,7 @@ function handleCommand(cmd) {
 const fileInput = document.getElementById("fileInput");
 
 fileInput.addEventListener("change", async (e) => {
-  const token = getSavedToken();
+  const token = getIdToken();
   const file = e.target.files[0];
   if (!file || !currentRoom) return;
 
@@ -251,7 +402,7 @@ messagesDiv.addEventListener("dragleave", () => {
 });
 
 messagesDiv.addEventListener("drop", async (e) => {
-  const token = getSavedToken();
+  const token = getIdToken();
 
   e.preventDefault();
   messagesDiv.style.borderColor = "#ff66cc";
@@ -278,6 +429,3 @@ textInput.addEventListener("keydown", (e) => {
 socket.on("message", addMsg);
 
 socket.on("error_msg", (m) => alert(m));
-
-// Run login check as soon as page loads
-handleLogin();
