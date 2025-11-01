@@ -173,6 +173,17 @@ app.get("/whoami", (_req, res) => {
   });
 });
 
+// use sparingly
+app.get("/burn", (req, res) => {
+  const ms = Math.max(0, Math.min(10000, Number(req.query.ms || 250)));
+  const end = Date.now() + ms;
+  // simulate CPU load  
+  while (Date.now() < end) {
+    Math.sqrt(Math.random());
+  }
+  res.json({ ok: true, burnedMs: ms, at: new Date().toISOString() });
+});
+
 app.get("/history/:room", authMiddleware, async (req, res) => {
   const room = req.params.room || "";
   if (!ROOMS.includes(room)) return res.status(400).json({ error: "Unknown room" });
