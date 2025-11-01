@@ -407,7 +407,10 @@ function initSocket() {
   if (socket) return;
   const token = getIdToken();
   if (!token) return; // not logged in yet
-  socket = io({ auth: { token } });
+  socket = io({
+    auth: { token },
+    transports: ["websocket"],
+  });
 
   socket.on("connect_error", () => {
     if (!authAlerted) {
