@@ -2,9 +2,31 @@ const CFG = window.HECHAT_CONFIG || {};
 const ROOMS = Array.isArray(CFG.rooms) ? CFG.rooms : [];
 
 // --- Cognito ---
-const AWS_REGION = CFG.region || "us-east-1";
-const COGNITO_USER_POOL_ID = CFG.userPoolId;
-const COGNITO_CLIENT_ID = CFG.clientId;
+// Allow overrides from localStorage; read from window.HECHAT_CONFIG live
+function getCfgRegion() {
+  return (
+    localStorage.getItem("cog_region") ||
+    (window.HECHAT_CONFIG && window.HECHAT_CONFIG.region) ||
+    CFG.region ||
+    "us-east-1"
+  );
+}
+function getCfgClientId() {
+  return (
+    localStorage.getItem("cog_client_id") ||
+    (window.HECHAT_CONFIG && window.HECHAT_CONFIG.clientId) ||
+    CFG.clientId ||
+    ""
+  );
+}
+function getCfgUserPoolId() {
+  return (
+    localStorage.getItem("cog_user_pool_id") ||
+    (window.HECHAT_CONFIG && window.HECHAT_CONFIG.userPoolId) ||
+    CFG.userPoolId ||
+    ""
+  );
+}
 
 function saveTokens(result) {
   if (!result) return;
@@ -31,9 +53,11 @@ function clearTokens() {
   localStorage.removeItem("cognito_token");
 }
 
-const COG_ENDPOINT = `https://cognito-idp.${AWS_REGION}.amazonaws.com/`;
+function COG_ENDPOINT() {
+  return `https://cognito-idp.${getCfgRegion()}.amazonaws.com/`;
+}
 async function cognitoRequest(target, body) {
-  const res = await fetch(COG_ENDPOINT, {
+  const res = await fetch(COG_ENDPOINT(), {
     method: "POST",
     headers: {
       "Content-Type": "application/x-amz-json-1.1",
@@ -53,11 +77,13 @@ async function cognitoRequest(target, body) {
 // --- Direct login handler ---
 async function loginDirect(username, password) {
   try {
+    const clientId = getCfgClientId();
+    if (!clientId) throw new Error("Missing Cognito ClientId (configure in settings)");
     const data = await cognitoRequest(
       "AWSCognitoIdentityProviderService.InitiateAuth",
       {
         AuthFlow: "USER_PASSWORD_AUTH",
-        ClientId: COGNITO_CLIENT_ID,
+        ClientId: clientId,
         AuthParameters: { USERNAME: username, PASSWORD: password }
       }
     );
@@ -153,8 +179,10 @@ document.getElementById("doRegister").onclick = async () => {
   const p = document.getElementById("regPass").value.trim();
   if (!u || !e || !p) return alert("Enter username, email, password");
   try {
+    const clientId = getCfgClientId();
+    if (!clientId) throw new Error("Missing Cognito ClientId (configure in settings)");
     await cognitoRequest("AWSCognitoIdentityProviderService.SignUp", {
-      ClientId: COGNITO_CLIENT_ID,
+      ClientId: clientId,
       Username: u,
       Password: p,
       UserAttributes: [ { Name: "email", Value: e } ]
@@ -173,8 +201,10 @@ document.getElementById("doConfirm").onclick = async () => {
   const c = document.getElementById("confCode").value.trim();
   if (!u || !c) return alert("Enter username and code");
   try {
+    const clientId = getCfgClientId();
+    if (!clientId) throw new Error("Missing Cognito ClientId (configure in settings)");
     await cognitoRequest("AWSCognitoIdentityProviderService.ConfirmSignUp", {
-      ClientId: COGNITO_CLIENT_ID,
+      ClientId: clientId,
       Username: u,
       ConfirmationCode: c
     });
@@ -190,8 +220,10 @@ document.getElementById("resendCode").onclick = async () => {
   const u = document.getElementById("confUser").value.trim();
   if (!u) return alert("Enter username first");
   try {
+    const clientId = getCfgClientId();
+    if (!clientId) throw new Error("Missing Cognito ClientId (configure in settings)");
     await cognitoRequest("AWSCognitoIdentityProviderService.ResendConfirmationCode", {
-      ClientId: COGNITO_CLIENT_ID,
+      ClientId: clientId,
       Username: u
     });
     alert("Code resent");
@@ -203,6 +235,44 @@ document.getElementById("resendCode").onclick = async () => {
 // Logout wiring
 const logoutBtn = document.getElementById("logoutBtn");
 logoutBtn.onclick = logout;
+
+// --- Cognito Settings  ---
+const settingsBtn = document.createElement("button");
+settingsBtn.id = "settingsBtn";
+settingsBtn.textContent = "Cognito Settings";
+leftPanel.insertBefore(settingsBtn, registerForm.nextSibling);
+
+const settingsForm = document.createElement("div");
+settingsForm.style.display = "none";
+settingsForm.innerHTML = `
+  <input id="setRegion" placeholder="Region (e.g. us-east-1)" style="width:100%;margin-top:6px;margin-bottom:4px;">
+  <input id="setUserPool" placeholder="User Pool Id" style="width:100%;margin-bottom:4px;">
+  <input id="setClientId" placeholder="App Client Id" style="width:100%;margin-bottom:4px;">
+  <button id="saveSettings" style="width:100%">Save Settings</button>
+`;
+leftPanel.insertBefore(settingsForm, settingsBtn.nextSibling);
+
+function hydrateSettingsFields() {
+  document.getElementById("setRegion").value = getCfgRegion();
+  document.getElementById("setUserPool").value = getCfgUserPoolId();
+  document.getElementById("setClientId").value = getCfgClientId();
+}
+hydrateSettingsFields();
+
+settingsBtn.onclick = () => {
+  settingsForm.style.display = settingsForm.style.display === "none" ? "block" : "none";
+  if (settingsForm.style.display === "block") hydrateSettingsFields();
+};
+
+document.getElementById("saveSettings").onclick = () => {
+  const r = document.getElementById("setRegion").value.trim();
+  const up = document.getElementById("setUserPool").value.trim();
+  const cid = document.getElementById("setClientId").value.trim();
+  if (r) localStorage.setItem("cog_region", r);
+  if (up) localStorage.setItem("cog_user_pool_id", up);
+  if (cid) localStorage.setItem("cog_client_id", cid);
+  alert("Saved. You can now Register/Login.");
+};
 
 const roomSel = document.getElementById("room");
 

@@ -109,9 +109,10 @@ app.get(["/", "/index.html"], (_req, res) => {
     clientId: process.env.COGNITO_CLIENT_ID,
     domain: process.env.COGNITO_DOMAIN || "",
   };
+  // Inject config early in so it's available before script.js runs
   const injected = html.replace(
-    "</body>",
-    `<script>window.HECHAT_CONFIG=${JSON.stringify(cfg)}</script></body>`
+    "<head>",
+    `<head><script>window.HECHAT_CONFIG=${JSON.stringify(cfg)}</script>`
   );
   res.type("html").send(injected);
 });
