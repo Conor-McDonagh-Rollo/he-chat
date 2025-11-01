@@ -12,6 +12,8 @@ dotenv.config();
 import jwt from "jsonwebtoken";
 import jwkToPem from "jwk-to-pem";
 import fetch from "node-fetch";
+import { createAdapter as createRedisAdapter } from "@socket.io/redis-adapter";
+import { createClient as createRedisClient } from "redis";
 
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID;
 const AWS_REGION = process.env.AWS_REGION || "us-east-1";
@@ -178,6 +180,22 @@ app.get("/history/:room", authMiddleware, async (req, res) => {
 });
 
 // --- Socket.IO ---
+async function setupRedisAdapter() { // Sync across AZs
+  try {
+    const ep = process.env.REDIS_ENDPOINT;
+    if (!ep) return;
+    const url = ep.startsWith("redis://") || ep.startsWith("rediss://") ? ep : `redis://${ep}:6379`;
+    const pubClient = createRedisClient({ url });
+    const subClient = pubClient.duplicate();
+    await pubClient.connect();
+    await subClient.connect();
+    io.adapter(createRedisAdapter(pubClient, subClient));
+    console.log("Socket.IO Redis adapter enabled:", url);
+  } catch (e) {
+    console.error("Failed to enable Redis adapter:", e);
+  }
+}
+await setupRedisAdapter();
 io.use(async (socket, next) => {
   try {
     const token =
