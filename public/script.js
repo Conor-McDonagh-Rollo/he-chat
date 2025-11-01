@@ -51,6 +51,11 @@ function getCfgUserPoolId() {
   );
 }
 
+function getCfgBucket() {
+  const cfg = (window.NETCHAT_CONFIG || window.HECHAT_CONFIG) || {};
+  return cfg.s3Bucket || CFG.s3Bucket || "";
+}
+
 function saveTokens(result) {
   if (!result) return;
   const { IdToken, AccessToken, RefreshToken } = result;
@@ -566,20 +571,18 @@ function handleCommand(cmd) {
 const fileInput = document.getElementById("fileInput");
 
 fileInput.addEventListener("change", async (e) => {
-  const token = getIdToken();
   const file = e.target.files[0];
   if (!file || !currentRoom) return;
-
-  const form = new FormData();
-  form.append("image", file);
-
-  const res = await fetch("/upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
-  if (!res.ok) { alert("Upload failed"); return; }
-  const { url } = await res.json();
-  if (!socket) initSocket();
-  if (!socket) return alert("Please log in first");
-  socket.emit("message", { text: url });
-  fileInput.value = ""; // reset
+  try {
+    const url = await uploadImage(file);
+    if (!socket) initSocket();
+    if (!socket) return alert("Please log in first");
+    socket.emit("message", { text: url });
+  } catch (err) {
+    alert("Upload failed: " + (err?.message || String(err)));
+  } finally {
+    fileInput.value = ""; // reset
+  }
 });
 
 // --- Drag & Drop Uploads ---
@@ -593,26 +596,39 @@ messagesDiv.addEventListener("dragleave", () => {
 });
 
 messagesDiv.addEventListener("drop", async (e) => {
-  const token = getIdToken();
-
   e.preventDefault();
   messagesDiv.style.borderColor = "#ff66cc";
   const file = e.dataTransfer.files[0];
   if (!file || !currentRoom) return;
-
-  const form = new FormData();
-  form.append("image", file);
-
-  const res = await fetch("/upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
-  if (!res.ok) { alert("Upload failed"); return; }
-  const { url } = await res.json();
-  
-  if (!socket) initSocket();
-  if (!socket) return alert("Please log in first");
-  socket.emit("message", {
-    text: url
-  });
+  try {
+    const url = await uploadImage(file);
+    if (!socket) initSocket();
+    if (!socket) return alert("Please log in first");
+    socket.emit("message", { text: url });
+  } catch (err) {
+    alert("Upload failed: " + (err?.message || String(err)));
+  }
 });
+
+async function uploadImage(file) {
+  // Direct browser upload to S3
+  const bucket = getCfgBucket();
+  if (!bucket) throw new Error("S3 bucket not configured");
+  const region = getCfgRegion();
+  const safeName = (file.name || "upload").replace(/[^\w.\-]+/g, "_");
+  const key = `uploads/${Date.now()}_${safeName}`;
+  const s3Url = `https://${bucket}.s3.${region}.amazonaws.com/${encodeURIComponent(key)}`;
+  const put = await fetch(s3Url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": file.type || "application/octet-stream",
+      "x-amz-acl": "public-read"
+    },
+    body: file
+  });
+  if (!put.ok) throw new Error(`S3 put failed ${put.status}`);
+  return s3Url;
+}
 
 
 textInput.addEventListener("keydown", (e) => {

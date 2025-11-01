@@ -68,38 +68,6 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// --- Image handling ---
-import AWS from "aws-sdk";
-import multer from "multer";
-import multerS3 from "multer-s3";
-
-const s3 = new AWS.S3({
-  region: process.env.AWS_REGION
-});
-
-const upload = multer({
-  storage: multerS3({
-    s3,
-    bucket: process.env.S3_BUCKET,
-    acl: "public-read",
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: (req, file, cb) => {
-      const safeName = file.originalname.replace(/[^\w.\-]+/g, "_");
-      const key = `uploads/${Date.now()}_${safeName}`;
-      cb(null, key);
-    },
-  }),
-  limits: { fileSize: 10 * 1024 * 1024 } // 10 MB
-});
-
-// handle uploads
-app.post("/upload", authMiddleware, upload.single("image"), (req, res) => {
-  res.json({ url: req.file.location });
-});
-
-// Note: uploads are stored in S3 and returned with public URLs
-//       I should probably make this more secure... but for later
-
 
 // --- Instance metadata ---
 let INSTANCE_INFO = { instanceId: "", az: "" };
@@ -143,6 +111,7 @@ app.get(["/", "/index.html"], (_req, res) => {
     domain: process.env.COGNITO_DOMAIN || "",
     instanceId: INSTANCE_INFO.instanceId,
     az: INSTANCE_INFO.az,
+    s3Bucket: process.env.S3_BUCKET || "",
   };
   // Inject config early in <head> so it's available before script.js runs
   const injected = html.replace(
