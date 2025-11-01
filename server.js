@@ -101,6 +101,29 @@ app.post("/upload", authMiddleware, upload.single("image"), (req, res) => {
 //       I should probably make this more secure... but for later
 
 
+// --- Instance metadata ---
+let INSTANCE_INFO = { instanceId: "", az: "" };
+async function fetchInstanceMetadata() {
+  try {
+    const base = "http://169.254.169.254/latest";
+    const tokRes = await fetch(`${base}/api/token`, {
+      method: "PUT",
+      headers: { "X-aws-ec2-metadata-token-ttl-seconds": "21600" },
+      timeout: 1000
+    });
+    const token = await tokRes.text();
+    const get = async (p) => (
+      await fetch(`${base}/meta-data/${p}`, { headers: { "X-aws-ec2-metadata-token": token }, timeout: 1000 })
+    ).text();
+    const instanceId = await get("instance-id");
+    const az = await get("placement/availability-zone");
+    INSTANCE_INFO = { instanceId, az };
+    console.log("Instance metadata:", INSTANCE_INFO);
+  } catch {
+  }
+}
+fetchInstanceMetadata();
+
 // --- Static + dynamic homepage ---
 app.get(["/", "/index.html"], (_req, res) => {
   const html = fs.readFileSync(path.join(__dirname, "public/index.html"), "utf8");
@@ -110,6 +133,8 @@ app.get(["/", "/index.html"], (_req, res) => {
     userPoolId: process.env.COGNITO_USER_POOL_ID,
     clientId: process.env.COGNITO_CLIENT_ID,
     domain: process.env.COGNITO_DOMAIN || "",
+    instanceId: INSTANCE_INFO.instanceId,
+    az: INSTANCE_INFO.az,
   };
   // Inject config early in <head> so it's available before script.js runs
   const injected = html.replace(

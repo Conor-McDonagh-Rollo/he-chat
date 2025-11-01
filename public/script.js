@@ -1,6 +1,26 @@
 const CFG = (window.NETCHAT_CONFIG || window.HECHAT_CONFIG) || {};
 const ROOMS = Array.isArray(CFG.rooms) ? CFG.rooms : [];
 
+// Add instance/AZ overlay if available
+(function showInstanceOverlay() {
+  try {
+    const info = (window.NETCHAT_CONFIG || window.HECHAT_CONFIG) || {};
+    if (!info.instanceId && !info.az) return;
+    const el = document.createElement('div');
+    el.id = 'instanceOverlay';
+    const parts = [];
+    if (info.instanceId) parts.push(`Instance ${info.instanceId}`);
+    if (info.az) parts.push(info.az);
+    el.textContent = parts.join(' • ');
+    const attach = () => document.body.appendChild(el);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', attach);
+    } else {
+      attach();
+    }
+  } catch {}
+})();
+
 // --- Cognito ---
 // Allow overrides from localStorage
 function getCfgRegion() {
