@@ -106,14 +106,22 @@ let INSTANCE_INFO = { instanceId: "", az: "" };
 async function fetchInstanceMetadata() {
   try {
     const base = "http://169.254.169.254/latest";
-    const tokRes = await fetch(`${base}/api/token`, {
+    const withTimeout = async (urlStr, init, ms = 1000) => {
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), ms);
+      try {
+        return await fetch(urlStr, { ...(init || {}), signal: ac.signal });
+      } finally {
+        clearTimeout(t);
+      }
+    };
+    const tokRes = await withTimeout(`${base}/api/token`, {
       method: "PUT",
-      headers: { "X-aws-ec2-metadata-token-ttl-seconds": "21600" },
-      timeout: 1000
+      headers: { "X-aws-ec2-metadata-token-ttl-seconds": "21600" }
     });
     const token = await tokRes.text();
     const get = async (p) => (
-      await fetch(`${base}/meta-data/${p}`, { headers: { "X-aws-ec2-metadata-token": token }, timeout: 1000 })
+      await withTimeout(`${base}/meta-data/${p}`, { headers: { "X-aws-ec2-metadata-token": token } })
     ).text();
     const instanceId = await get("instance-id");
     const az = await get("placement/availability-zone");
