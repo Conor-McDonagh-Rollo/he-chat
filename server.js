@@ -164,6 +164,15 @@ app.get("/health", authMiddleware, async (_req, res) => {
   }
 });
 
+// Public endpoint to identify the instance (useful for LB tests)
+app.get("/whoami", (_req, res) => {
+  res.json({
+    instanceId: INSTANCE_INFO.instanceId || null,
+    az: INSTANCE_INFO.az || null,
+    time: new Date().toISOString(),
+  });
+});
+
 app.get("/history/:room", authMiddleware, async (req, res) => {
   const room = req.params.room || "";
   if (!ROOMS.includes(room)) return res.status(400).json({ error: "Unknown room" });

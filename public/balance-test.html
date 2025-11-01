@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>NetChat Load Balance Test</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      .panel { max-width: 720px; margin: 20px auto; }
+      pre { background: rgba(0,0,0,0.5); padding: 8px; border-radius: 6px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border-bottom: 1px dashed #ff66cc; padding: 6px; text-align: left; }
+    </style>
+  </head>
+  <body>
+    <header>★☆ NetChat — Load Balancer Test ☆★</header>
+    <div class="panel">
+      <p>
+        Requests per second: <input id="rps" value="10" size="4" />
+        Duration (seconds): <input id="duration" value="10" size="4" />
+        <button id="start">Start Test</button>
+      </p>
+      <div id="status"></div>
+      <table>
+        <thead><tr><th>Instance</th><th>AZ</th><th>Count</th></tr></thead>
+        <tbody id="tbl"></tbody>
+      </table>
+      <pre id="log"></pre>
+    </div>
+    <script>
+      const status = document.getElementById('status');
+      const logEl = document.getElementById('log');
+      const tbl = document.getElementById('tbl');
+      function log(m){ logEl.textContent += m + "\n"; }
+      function row(id, az, n){ return `<tr><td>${id||'-'}</td><td>${az||'-'}</td><td>${n}</td></tr>`; }
+      document.getElementById('start').onclick = async () => {
+        const rps = Math.max(1, Number(document.getElementById('rps').value||10));
+        const dur = Math.max(1, Number(document.getElementById('duration').value||10));
+        const total = rps * dur;
+        status.textContent = `Running ${total} requests...`;
+        logEl.textContent = '';
+        const counts = new Map();
+        let running = 0, done = 0;
+        const endAt = Date.now() + dur*1000;
+        const tick = () => {
+          if (Date.now() > endAt) return;
+          for (let i=0;i<rps;i++) {
+            running++;
+            fetch('/whoami').then(r=>r.json()).then(j=>{
+              const key = `${j.instanceId||'unknown'}|${j.az||'-'}`;
+              counts.set(key, (counts.get(key)||0)+1);
+              done++;
+              if (done % 10 === 0) render();
+            }).catch(e=>{ log('err '+e); }).finally(()=>{ running--; });
+          }
+          setTimeout(tick, 1000);
+        };
+        const render = () => {
+          tbl.innerHTML = Array.from(counts.entries()).map(([k,n])=>{
+            const [id, az] = k.split('|');
+            return row(id, az, n);
+          }).join('');
+          status.textContent = `Done ${done}/${total}`;
+        };
+        tick();
+        const wait = setInterval(()=>{ if (Date.now()>endAt && running===0){ clearInterval(wait); render(); log('Done'); } }, 500);
+      };
+    </script>
+  </body>
+</html>
+
