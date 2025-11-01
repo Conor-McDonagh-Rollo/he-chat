@@ -617,12 +617,11 @@ async function uploadImage(file) {
   const region = getCfgRegion();
   const safeName = (file.name || "upload").replace(/[^\w.\-]+/g, "_");
   const key = `uploads/${Date.now()}_${safeName}`;
-  const s3Url = `https://${bucket}.s3.${region}.amazonaws.com/${encodeURIComponent(key)}`;
+  const s3Url = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
   const put = await fetch(s3Url, {
     method: "PUT",
     headers: {
-      "Content-Type": file.type || "application/octet-stream",
-      "x-amz-acl": "public-read"
+      "Content-Type": file.type || "application/octet-stream"
     },
     body: file
   });
