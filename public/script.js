@@ -1,11 +1,12 @@
-const CFG = window.HECHAT_CONFIG || {};
+const CFG = (window.NETCHAT_CONFIG || window.HECHAT_CONFIG) || {};
 const ROOMS = Array.isArray(CFG.rooms) ? CFG.rooms : [];
 
 // --- Cognito ---
-// Allow overrides from localStorage; read from window.HECHAT_CONFIG live
+// Allow overrides from localStorage
 function getCfgRegion() {
   return (
     localStorage.getItem("cog_region") ||
+    (window.NETCHAT_CONFIG && window.NETCHAT_CONFIG.region) ||
     (window.HECHAT_CONFIG && window.HECHAT_CONFIG.region) ||
     CFG.region ||
     "us-east-1"
@@ -14,6 +15,7 @@ function getCfgRegion() {
 function getCfgClientId() {
   return (
     localStorage.getItem("cog_client_id") ||
+    (window.NETCHAT_CONFIG && window.NETCHAT_CONFIG.clientId) ||
     (window.HECHAT_CONFIG && window.HECHAT_CONFIG.clientId) ||
     CFG.clientId ||
     ""
@@ -22,6 +24,7 @@ function getCfgClientId() {
 function getCfgUserPoolId() {
   return (
     localStorage.getItem("cog_user_pool_id") ||
+    (window.NETCHAT_CONFIG && window.NETCHAT_CONFIG.userPoolId) ||
     (window.HECHAT_CONFIG && window.HECHAT_CONFIG.userPoolId) ||
     CFG.userPoolId ||
     ""
@@ -76,28 +79,21 @@ async function cognitoRequest(target, body) {
 
 // --- Direct login handler ---
 async function loginDirect(username, password) {
-  try {
-    const clientId = getCfgClientId();
-    if (!clientId) throw new Error("Missing Cognito ClientId (configure in settings)");
-    const data = await cognitoRequest(
-      "AWSCognitoIdentityProviderService.InitiateAuth",
-      {
-        AuthFlow: "USER_PASSWORD_AUTH",
-        ClientId: clientId,
-        AuthParameters: { USERNAME: username, PASSWORD: password }
-      }
-    );
-    const result = data.AuthenticationResult;
-    if (!result?.IdToken) throw new Error("No token returned");
-    saveTokens(result);
-    alert("Login successful!");
-    loginForm.style.display = "none";
-    loginBtn.textContent = "Logged In ✓";
-    loginBtn.disabled = true;
-    location.reload();
-  } catch (err) {
-    alert("Login failed: " + err.message);
-  }
+  const clientId = getCfgClientId();
+  if (!clientId) throw new Error("Missing Cognito ClientId");
+  const data = await cognitoRequest(
+    "AWSCognitoIdentityProviderService.InitiateAuth",
+    {
+      AuthFlow: "USER_PASSWORD_AUTH",
+      ClientId: clientId,
+      AuthParameters: { USERNAME: username, PASSWORD: password }
+    }
+  );
+  const result = data.AuthenticationResult;
+  if (!result?.IdToken) throw new Error("No token returned");
+  saveTokens(result);
+  loginBtn.textContent = "Logged In ✓";
+  loginBtn.disabled = true;
 }
 
 async function logout() {
@@ -118,161 +114,248 @@ async function logout() {
   }
 }
 
-// --- Basic inline login UI ---
+// --- Modal Utilities ---
 const loginBtn = document.getElementById("loginBtn");
-const loginForm = document.createElement("div");
-loginForm.innerHTML = `
-  <input id="userField" placeholder="Username" style="width:100%;margin-bottom:4px;">
-  <input id="passField" type="password" placeholder="Password" style="width:100%;margin-bottom:4px;">
-  <button id="doLogin" style="width:100%">Submit</button>
-`;
-loginForm.style.display = "none";
-document.getElementById("left").insertBefore(loginForm, loginBtn.nextSibling);
+const backdrop = document.getElementById("modalBackdrop");
+function closeModal() {
+  backdrop.innerHTML = "";
+  backdrop.style.display = "none";
+}
+function openModal(title, bodyHTML, onMount) {
+  backdrop.innerHTML = `
+    <div class="modal">
+      <h3>${title}</h3>
+      <div class="modal-body">${bodyHTML}</div>
+      <div class="modal-actions">
+        <button id="modalClose">Cancel</button>
+      </div>
+    </div>`;
+  backdrop.style.display = "flex";
+  document.getElementById("modalClose").onclick = closeModal;
+  if (typeof onMount === "function") onMount();
+}
 
-loginBtn.onclick = () => {
-  loginForm.style.display = loginForm.style.display === "none" ? "block" : "none";
-};
-document.getElementById("doLogin").onclick = () => {
-  const u = document.getElementById("userField").value.trim();
-  const p = document.getElementById("passField").value.trim();
-  if (!u || !p) return alert("Enter username & password");
-  loginDirect(u, p);
-};
+// --- Login Modal ---
+function openLoginModal() {
+  openModal(
+    "Log In",
+    `
+      <input id="userField" placeholder="Username">
+      <input id="passField" type="password" placeholder="Password">
+      <div class="hint">Use your NetChat credentials.</div>
+      <div style="text-align:right"><a href="#" id="forgotLink">Forgot password?</a></div>
+      <div id="loginError" class="hint" style="color:#ff8888;display:none;"></div>
+    `,
+    () => {
+      const actions = document.querySelector('.modal-actions');
+      const loginBtnEl = document.createElement('button');
+      loginBtnEl.textContent = 'Log In';
+      actions.insertBefore(loginBtnEl, document.getElementById('modalClose'));
+      function showErr(m){ const el=document.getElementById('loginError'); el.textContent=m; el.style.display='block'; }
+      const doSubmit = async () => {
+        const u = document.getElementById('userField').value.trim();
+        const p = document.getElementById('passField').value.trim();
+        if (!u || !p) { showErr('Enter username & password'); return; }
+        [loginBtnEl, document.getElementById('modalClose')].forEach(el=>el.disabled=true);
+        try {
+          await loginDirect(u, p);
+          closeModal();
+          initSocket();
+        } catch (e) { showErr(e.message || 'Login failed'); }
+        finally { [loginBtnEl, document.getElementById('modalClose')].forEach(el=>el.disabled=false); }
+      };
+      loginBtnEl.onclick = doSubmit;
+      document.getElementById('passField').addEventListener('keydown', e => { if (e.key === 'Enter') doSubmit(); });
+      document.getElementById('forgotLink').onclick = (e) => { e.preventDefault(); closeModal(); openForgotModal(); };
+    }
+  );
+}
+loginBtn.onclick = openLoginModal;
 
-// Auto-mark logged-in state
+// Auto mark loggedin state
 const savedId = getIdToken();
 if (savedId) {
   loginBtn.textContent = "Logged In ✓";
   loginBtn.disabled = true;
 }
 
-// --- Register UI ---
+// --- Register Modal ---
 const leftPanel = document.getElementById("left");
 const registerBtn = document.createElement("button");
 registerBtn.id = "registerBtn";
 registerBtn.textContent = "Register";
-leftPanel.insertBefore(registerBtn, loginForm.nextSibling);
+leftPanel.insertBefore(registerBtn, loginBtn.nextSibling);
 
-const registerForm = document.createElement("div");
-registerForm.style.display = "none";
-registerForm.innerHTML = `
-  <input id="regUser" placeholder="Username" style="width:100%;margin-top:6px;margin-bottom:4px;">
-  <input id="regEmail" type="email" placeholder="Email" style="width:100%;margin-bottom:4px;">
-  <input id="regPass" type="password" placeholder="Password" style="width:100%;margin-bottom:4px;">
-  <button id="doRegister" style="width:100%">Sign Up</button>
-  <div id="confirmBlock" style="display:none;margin-top:6px;">
-    <input id="confUser" placeholder="Username" style="width:100%;margin-bottom:4px;">
-    <input id="confCode" placeholder="Confirmation Code" style="width:100%;margin-bottom:4px;">
-    <button id="doConfirm" style="width:100%">Confirm</button>
-    <button id="resendCode" style="width:100%;margin-top:4px;">Resend Code</button>
-  </div>
-`;
-leftPanel.insertBefore(registerForm, registerBtn.nextSibling);
+function openRegisterModal() {
+  // SignUp
+  const renderStep1 = () => openModal(
+    "Register",
+    `
+      <input id="regUser" placeholder="Username">
+      <input id="regEmail" type="email" placeholder="Email">
+      <input id="regPass" type="password" placeholder="Password">
+      <div class="hint">A confirmation code will be emailed to you.</div>
+      <div id="regError" class="hint" style="color:#ff8888;display:none;"></div>
+    `,
+    () => {
+      const actions = document.querySelector('.modal-actions');
+      const signUpBtn = document.createElement('button');
+      signUpBtn.textContent = 'Sign Up';
+      actions.insertBefore(signUpBtn, document.getElementById('modalClose'));
+      const doSubmit = async () => {
+        const u = document.getElementById("regUser").value.trim();
+        const e = document.getElementById("regEmail").value.trim();
+        const p = document.getElementById("regPass").value.trim();
+        if (!u || !e || !p) { showErr("Enter username, email, password"); return; }
+        signUpBtn.disabled = true;
+        try {
+          const clientId = getCfgClientId();
+          if (!clientId) throw new Error("Missing Cognito ClientId");
+          await cognitoRequest("AWSCognitoIdentityProviderService.SignUp", {
+            ClientId: clientId, Username: u, Password: p,
+            UserAttributes: [ { Name: "email", Value: e } ]
+          });
+          // Step 2
+          renderStep2(u);
+        } catch (err) {
+          showErr(err.message || 'Register failed');
+        } finally { signUpBtn.disabled = false; }
+      };
+      function showErr(m){ const el=document.getElementById('regError'); el.textContent=m; el.style.display='block'; }
+      document.getElementById('regPass').addEventListener('keydown', e => { if (e.key === 'Enter') doSubmit(); });
+      signUpBtn.onclick = doSubmit;
+    }
+  );
 
-registerBtn.onclick = () => {
-  registerForm.style.display = registerForm.style.display === "none" ? "block" : "none";
-};
+  // Confirm
+  const renderStep2 = (prefillUser) => openModal(
+    "Confirm Account",
+    `
+      <input id="confUser" placeholder="Username" value="${prefillUser || ''}">
+      <input id="confCode" placeholder="Confirmation Code">
+      <div class="hint">Check your email for the code.</div>
+      <div id="confError" class="hint" style="color:#ff8888;display:none;"></div>
+    `,
+    () => {
+      const actions = document.querySelector('.modal-actions');
+      const confirmBtn = document.createElement('button');
+      confirmBtn.textContent = 'Confirm';
+      const resendBtn = document.createElement('button');
+      resendBtn.textContent = 'Resend Code';
+      actions.insertBefore(resendBtn, document.getElementById('modalClose'));
+      actions.insertBefore(confirmBtn, resendBtn);
+      function showErr(m){ const el=document.getElementById('confError'); el.textContent=m; el.style.display='block'; }
+      confirmBtn.onclick = async () => {
+        const u = document.getElementById('confUser').value.trim();
+        const c = document.getElementById('confCode').value.trim();
+        if (!u || !c) { showErr('Enter username and code'); return; }
+        confirmBtn.disabled = true;
+        try {
+          const clientId = getCfgClientId();
+          if (!clientId) throw new Error("Missing Cognito ClientId");
+          await cognitoRequest("AWSCognitoIdentityProviderService.ConfirmSignUp", {
+            ClientId: clientId, Username: u, ConfirmationCode: c
+          });
+          closeModal();
+          openLoginModal();
+        } catch (err) { showErr(err.message || 'Confirm failed'); }
+        finally { confirmBtn.disabled = false; }
+      };
+      resendBtn.onclick = async () => {
+        const u = document.getElementById('confUser').value.trim();
+        if (!u) { showErr('Enter username first'); return; }
+        resendBtn.disabled = true;
+        try {
+          const clientId = getCfgClientId();
+          if (!clientId) throw new Error("Missing Cognito ClientId");
+          await cognitoRequest("AWSCognitoIdentityProviderService.ResendConfirmationCode", {
+            ClientId: clientId, Username: u
+          });
+        } catch (err) { showErr(err.message || 'Resend failed'); }
+        finally { resendBtn.disabled = false; }
+      };
+    }
+  );
 
-document.getElementById("doRegister").onclick = async () => {
-  const u = document.getElementById("regUser").value.trim();
-  const e = document.getElementById("regEmail").value.trim();
-  const p = document.getElementById("regPass").value.trim();
-  if (!u || !e || !p) return alert("Enter username, email, password");
-  try {
-    const clientId = getCfgClientId();
-    if (!clientId) throw new Error("Missing Cognito ClientId (configure in settings)");
-    await cognitoRequest("AWSCognitoIdentityProviderService.SignUp", {
-      ClientId: clientId,
-      Username: u,
-      Password: p,
-      UserAttributes: [ { Name: "email", Value: e } ]
-    });
-    alert("Sign-up started. Check email for code.");
-    // show confirm block prefilled
-    document.getElementById("confUser").value = u;
-    document.getElementById("confirmBlock").style.display = "block";
-  } catch (err) {
-    alert("Register failed: " + err.message);
-  }
-};
-
-document.getElementById("doConfirm").onclick = async () => {
-  const u = document.getElementById("confUser").value.trim();
-  const c = document.getElementById("confCode").value.trim();
-  if (!u || !c) return alert("Enter username and code");
-  try {
-    const clientId = getCfgClientId();
-    if (!clientId) throw new Error("Missing Cognito ClientId (configure in settings)");
-    await cognitoRequest("AWSCognitoIdentityProviderService.ConfirmSignUp", {
-      ClientId: clientId,
-      Username: u,
-      ConfirmationCode: c
-    });
-    alert("Confirmed! You can now login.");
-    document.getElementById("confirmBlock").style.display = "none";
-    registerForm.style.display = "none";
-  } catch (err) {
-    alert("Confirm failed: " + err.message);
-  }
-};
-
-document.getElementById("resendCode").onclick = async () => {
-  const u = document.getElementById("confUser").value.trim();
-  if (!u) return alert("Enter username first");
-  try {
-    const clientId = getCfgClientId();
-    if (!clientId) throw new Error("Missing Cognito ClientId (configure in settings)");
-    await cognitoRequest("AWSCognitoIdentityProviderService.ResendConfirmationCode", {
-      ClientId: clientId,
-      Username: u
-    });
-    alert("Code resent");
-  } catch (err) {
-    alert("Resend failed: " + err.message);
-  }
-};
+  renderStep1();
+}
+registerBtn.onclick = openRegisterModal;
 
 // Logout wiring
 const logoutBtn = document.getElementById("logoutBtn");
 logoutBtn.onclick = logout;
 
-// --- Cognito Settings  ---
-const settingsBtn = document.createElement("button");
-settingsBtn.id = "settingsBtn";
-settingsBtn.textContent = "Cognito Settings";
-leftPanel.insertBefore(settingsBtn, registerForm.nextSibling);
+// --- Forgot Password Modal ---
+function openForgotModal() {
+  // Request reset
+  const step1 = () => openModal(
+    "Reset Password",
+    `
+      <input id="fpUser" placeholder="Username">
+      <div class="hint">We will email a reset code to your verified address.</div>
+      <div id="fpError" class="hint" style="color:#ff8888;display:none;"></div>
+    `,
+    () => {
+      const actions = document.querySelector('.modal-actions');
+      const sendBtn = document.createElement('button');
+      sendBtn.textContent = 'Send Code';
+      actions.insertBefore(sendBtn, document.getElementById('modalClose'));
+      function showErr(m){ const el=document.getElementById('fpError'); el.textContent=m; el.style.display='block'; }
+      const doSend = async () => {
+        const u = document.getElementById('fpUser').value.trim();
+        if (!u) { showErr('Enter your username'); return; }
+        sendBtn.disabled = true;
+        try {
+          const clientId = getCfgClientId();
+          if (!clientId) throw new Error('Missing Cognito ClientId');
+          await cognitoRequest('AWSCognitoIdentityProviderService.ForgotPassword', { ClientId: clientId, Username: u });
+          step2(u);
+        } catch (e) { showErr(e.message || 'Failed to send code'); }
+        finally { sendBtn.disabled = false; }
+      };
+      sendBtn.onclick = doSend;
+      document.getElementById('fpUser').addEventListener('keydown', e => { if (e.key === 'Enter') doSend(); });
+    }
+  );
+  // Confirm new password
+  const step2 = (prefillUser) => openModal(
+    "Enter Code",
+    `
+      <input id="fpUser2" placeholder="Username" value="${prefillUser || ''}">
+      <input id="fpCode" placeholder="Reset Code">
+      <input id="fpNewPass" type="password" placeholder="New Password">
+      <div id="fp2Error" class="hint" style="color:#ff8888;display:none;"></div>
+    `,
+    () => {
+      const actions = document.querySelector('.modal-actions');
+      const confirmBtn = document.createElement('button');
+      confirmBtn.textContent = 'Update Password';
+      actions.insertBefore(confirmBtn, document.getElementById('modalClose'));
+      function showErr(m){ const el=document.getElementById('fp2Error'); el.textContent=m; el.style.display='block'; }
+      const doConfirm = async () => {
+        const u = document.getElementById('fpUser2').value.trim();
+        const c = document.getElementById('fpCode').value.trim();
+        const p = document.getElementById('fpNewPass').value.trim();
+        if (!u || !c || !p) { showErr('Enter all fields'); return; }
+        confirmBtn.disabled = true;
+        try {
+          const clientId = getCfgClientId();
+          if (!clientId) throw new Error('Missing Cognito ClientId');
+          await cognitoRequest('AWSCognitoIdentityProviderService.ConfirmForgotPassword', {
+            ClientId: clientId, Username: u, ConfirmationCode: c, Password: p
+          });
+          closeModal();
+          openLoginModal();
+        } catch (e) { showErr(e.message || 'Failed to update password'); }
+        finally { confirmBtn.disabled = false; }
+      };
+      confirmBtn.onclick = doConfirm;
+      document.getElementById('fpNewPass').addEventListener('keydown', e => { if (e.key === 'Enter') doConfirm(); });
+    }
+  );
 
-const settingsForm = document.createElement("div");
-settingsForm.style.display = "none";
-settingsForm.innerHTML = `
-  <input id="setRegion" placeholder="Region (e.g. us-east-1)" style="width:100%;margin-top:6px;margin-bottom:4px;">
-  <input id="setUserPool" placeholder="User Pool Id" style="width:100%;margin-bottom:4px;">
-  <input id="setClientId" placeholder="App Client Id" style="width:100%;margin-bottom:4px;">
-  <button id="saveSettings" style="width:100%">Save Settings</button>
-`;
-leftPanel.insertBefore(settingsForm, settingsBtn.nextSibling);
-
-function hydrateSettingsFields() {
-  document.getElementById("setRegion").value = getCfgRegion();
-  document.getElementById("setUserPool").value = getCfgUserPoolId();
-  document.getElementById("setClientId").value = getCfgClientId();
+  step1();
 }
-hydrateSettingsFields();
-
-settingsBtn.onclick = () => {
-  settingsForm.style.display = settingsForm.style.display === "none" ? "block" : "none";
-  if (settingsForm.style.display === "block") hydrateSettingsFields();
-};
-
-document.getElementById("saveSettings").onclick = () => {
-  const r = document.getElementById("setRegion").value.trim();
-  const up = document.getElementById("setUserPool").value.trim();
-  const cid = document.getElementById("setClientId").value.trim();
-  if (r) localStorage.setItem("cog_region", r);
-  if (up) localStorage.setItem("cog_user_pool_id", up);
-  if (cid) localStorage.setItem("cog_client_id", cid);
-  alert("Saved. You can now Register/Login.");
-};
 
 const roomSel = document.getElementById("room");
 

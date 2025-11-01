@@ -4,6 +4,48 @@ body {
     overflow: hidden;
 }
 
+#modalBackdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.modal {
+    background: rgba(30, 0, 60, 0.95);
+    border: 2px dotted #ff66cc;
+    border-radius: 12px;
+    box-shadow: 0 0 18px #ff33ff;
+    width: 360px;
+    max-width: calc(100% - 40px);
+    padding: 14px;
+}
+
+.modal h3 {
+    margin: 0 0 8px 0;
+    text-align: center;
+}
+
+.modal .modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.modal .modal-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.modal .hint {
+    font-size: 12px;
+    color: #ffccff;
+}
+
 * {
     cursor: url("https://ani.cursors-4u.net/cursors/cur-13/cur1156.png"), auto;
 }

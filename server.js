@@ -109,10 +109,10 @@ app.get(["/", "/index.html"], (_req, res) => {
     clientId: process.env.COGNITO_CLIENT_ID,
     domain: process.env.COGNITO_DOMAIN || "",
   };
-  // Inject config early in so it's available before script.js runs
+  // Inject config early in <head> so it's available before script.js runs
   const injected = html.replace(
     "<head>",
-    `<head><script>window.HECHAT_CONFIG=${JSON.stringify(cfg)}</script>`
+    `<head><script>(function(){var cfg=${JSON.stringify(cfg)}; window.NETCHAT_CONFIG=cfg; window.HECHAT_CONFIG=cfg;})();</script>`
   );
   res.type("html").send(injected);
 });
@@ -255,5 +255,5 @@ io.on("connection", (socket) => {
 // --- Run ---
 await ensureRoomTables();
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`HE-Chat listening on :${PORT} with rooms: ${ROOMS.join(", ")}`);
+  console.log(`NetChat listening on :${PORT} with rooms: ${ROOMS.join(", ")}`);
 });
