@@ -2,6 +2,7 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import url from "url";
+import crypto from "crypto";
 
 import { getProjectRoot } from "./config.js";
 
@@ -86,17 +87,40 @@ export function createApp(options)
 	});
 
 	// CPU burn (demo CPU based scaling)
-	app.get("/burn", (req, res) =>
+	app.get("/burn", async (req, res) =>
 	{
-		const ms = Math.max(0, Math.min(10000, Number(req.query.ms || 250))); 
-		const end = Date.now() + ms;
-		while (Date.now() < end)
+		// use pbkdf2 to push cpu via libuv threadpool
+		const conc = Math.max(1, Math.min(32, Number(req.query.c || req.query.concurrent || 8)));
+		const iters = Math.max(10000, Math.min(2000000, Number(req.query.iters || 200000)));
+		const started = Date.now();
+		const jobs = [];
+		for (let i = 0; i < conc; i++)
 		{
-			Math.sqrt(Math.random());
+			jobs.push(new Promise((resolve, reject) =>
+			{
+				crypto.pbkdf2("netchat", "salt" + i, iters, 64, "sha512", (err) =>
+				{
+					if (err) return reject(err);
+					resolve();
+				});
+			}));
 		}
-		res.json({ ok: true, burnedMs: ms, at: new Date().toISOString() });
+		await Promise.all(jobs);
+		const elapsed = Date.now() - started;
+		res.json({ ok: true, concurrent: conc, iterations: iters, ms: elapsed, at: new Date().toISOString() });
+	});
+
+	// Memory allocation test (use with care)
+	app.get("/mem", (req, res) =>
+	{
+		const mb = Math.max(1, Math.min(1024, Number(req.query.mb || 50)));
+		const sec = Math.max(1, Math.min(300, Number(req.query.sec || 30)));
+		const buf = Buffer.alloc(mb * 1024 * 1024, 0xaa);
+		globalThis.__NETCHAT_MEM = globalThis.__NETCHAT_MEM || [];
+		globalThis.__NETCHAT_MEM.push(buf);
+		setTimeout(() => { globalThis.__NETCHAT_MEM = []; }, sec * 1000);
+		res.json({ ok: true, allocatedMB: mb, holdSeconds: sec, at: new Date().toISOString() });
 	});
 
 	return app;
 }
-
